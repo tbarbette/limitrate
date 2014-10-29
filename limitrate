@@ -1,0 +1,35 @@
+#!/bin/bash
+
+if [ "$#" -lt 3 ] ; then
+	echo "Limitrate. Limit multiple calls to COMMAND by batching PARAMETER"
+	echo "Usage : $0 RATE COMMAND PARAMETER [SEP]"
+	echo "		RATE is the min number of seconds between two call to command"
+	echo "		COMMAND a fixed command which will be called, where % will be replaced by the variable parameter. If this command changes between two call to this program, another counter will be used."
+	echo "		PARAMETER a variable parameter which will replace "%" in command. If the elapsed time is lesser than RATE, the PARAMETER will be remember for the next call to this program. When the time elapsed is greater than rate, the "%" will be raplaced by \"PARAMETER PARAMETER [...]\"."
+	echo "		SEP Separator between parameters. Default to space."
+	exit
+fi
+
+rate=$1
+command=$2
+param=$3
+sep=${4:- }
+id=`echo -n $command | md5sum | awk '{ print $1 }'`
+
+if [ -e "/tmp/$id" ] ; then 
+	lasttime=`cat /tmp/$id`
+else
+	lasttime=1
+fi
+
+thistime=`date "+%s"`
+elapsed=$(( $thistime - $lasttime ))
+echo -n "$param$sep" >> /tmp/$id.params
+
+if [ "$elapsed" -gt "$rate" ]; then
+	params=`cat /tmp/$id.params`
+	echo -n "" > /tmp/$id.params
+	echo $thistime > /tmp/$id
+	cmd=${command/\%/${params:: -1}}
+	eval "$cmd"
+fi
