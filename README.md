@@ -1,6 +1,6 @@
 #Limit rate
 
-THis programs allows you to limit the rate of launching a certain command. Instead of launching
+This programs allows you to limit the rate of launching a certain command. Instead of launching
 
 > /usr/bin/program argument1 argument2
 
