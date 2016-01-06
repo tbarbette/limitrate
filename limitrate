@@ -2,24 +2,41 @@
 
 if [ "$#" -lt 3 ] ; then
 	echo "Limitrate. Limit multiple calls to COMMAND by batching PARAMETER"
-	echo "Usage : $0 RATE COMMAND PARAMETER [SEP]"
-	echo "		RATE is the min number of seconds between two call to command"
+	echo "Usage : $0 [options][-m max_burst] [-s separator] RATE COMMAND PARAMETER"
+	echo "		RATE is the min number of seconds between two call to cmd"
 	echo "		COMMAND a fixed command which will be called, where % will be replaced by the variable parameter. If this command changes between two call to this program, another counter will be used."
-	echo "		PARAMETER a variable parameter which will replace "%" in command. If the elapsed time is lesser than RATE, the PARAMETER will be remember for the next call to this program. When the time elapsed is greater than rate, the "%" will be raplaced by \"PARAMETER PARAMETER [...]\"."
-	echo "		SEP Separator between parameters. Default to space."
+	echo "		PARAMETER a variable parameter which will replace "%" in cmd. If the elapsed time is lesser than RATE, the PARAMETER will be remembered for the next call to this program. When the time elapsed is greater than rate, the "%" will be raplaced by \"PARAMETER PARAMETER [...]\"."
+
+	echo "  And where options is one of the following:"
+	echo "      -m max_burst Maximal number of subsequent calls to COMMAND. Each call to COMMAND increment the number of call to cmd (called the burst count), if burst is > than max_burst, the COMMAND will not be called anymore until some time pass (see -b parameter to set the time)."
+	echo "		-b Burst multiplier. Burst count will be reset after burst_multiplier * RATE seconds. In other terms, if this is 5 and RATE is 10, if there is a pause of 50 secondes, the burst count will be reset to 0, allowing to call again the cmd if burst was bigger than max_burst. Default to 5."
+	echo " 		-s Separator between the multiple PARAMETER given during the last burst. Default to space."
 	exit
 fi
 
-rate=$1
-command=$2
-param=$3
-sep=${4:- }
-id=`echo -n $command | md5sum | awk '{ print $1 }'`
+MAX_BURST=3
+BURST_TIME=5
+sep=" "
+while getopts "m:s:b:" flag; do
+case "$flag" in
+    m) MAX_BURST=$OPTARG;;
+	b) BURST_TIME=$OPTARG;;
+	s) sep=$OPTARG;;
+esac
+done
 
-if [ -e "/tmp/$id" ] ; then 
+rate=${@:$OPTIND:1}
+cmd=${@:$OPTIND+1:1}
+param=${@:$OPTIND+2:1}
+
+id=`echo -n $cmd | md5sum | awk '{ print $1 }'`
+
+if [ -e "/tmp/$id" -a -e "/tmp/${id}.burst" ] ; then
 	lasttime=`cat /tmp/$id`
+	burst=`cat /tmp/${id}.burst`
 else
 	lasttime=1
+	burst=0
 fi
 
 thistime=`date "+%s"`
@@ -27,9 +44,20 @@ elapsed=$(( $thistime - $lasttime ))
 echo -n "$param$sep" >> /tmp/$id.params
 
 if [ "$elapsed" -gt "$rate" ]; then
-	params=`cat /tmp/$id.params`
-	echo -n "" > /tmp/$id.params
+	if [ "$elapsed" -gt "$(( $rate * $BURST_TIME ))" ] ; then
+		echo "Burst is resetted."
+		burst=0
+	fi
+	burst=$(( $burst + 1 ))
+	params=`cat /tmp/${id}.params`
+	echo -n "" > /tmp/${id}.params
 	echo $thistime > /tmp/$id
-	cmd=${command/\%/${params:: -1}}
-	eval "$cmd"
+	echo $burst > /tmp/${id}.burst
+	if [ $burst -lt $MAX_BURST ] ; then
+		cmd=${cmd/\%/${params}}
+		echo "Launching $cmd"
+		eval "$cmd"
+	else
+		echo "Burst is $burst, not launching"
+	fi
 fi
